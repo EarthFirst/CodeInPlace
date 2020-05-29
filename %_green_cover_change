@@ -1,0 +1,110 @@
+"""Final Project for Stanford 'Code In Place'.
+Calculates % change in green cover form Landsat Raster images"""
+ 
+
+import rasterio
+from matplotlib import pyplot as plt
+import numpy as np
+HIGH_VEGETATION_NDVI_THRESHOLD= 0.5
+'''
+# NDVI is calculated as a ratio between the red (R) and near infrared (NIR) values as: (NIR - R) / (NIR + R)
+# In Landsat 8, NDVI = (Band 5 – Band 4) / (Band 5 + Band 4)
+'''
+"""
+Decomposition
+    1. Open_raster_file
+    2. Read raster and convert_to_float
+    3. Calculate_NDVI and NDVI_diff
+    4. Calculate percent change in green using threshold
+    5. Write NDVI rasters
+    6. Visualize NDVI rasters
+"""
+
+""" STEP1: Open raster data in read mode(default)
+# Year1 landsat image as 'first' and Year2 landsat image as 'last' """
+
+first_red = rasterio.open("Year1_RED.tif") #Read the RED band of the Landsat8 Year1
+first_nir = rasterio.open("Year1_NIR.tif") #Read the NIR band of the Landsat8 Year1 
+last_red = rasterio.open("Year2_RED.tif") #Read the RED band of the Landsat8 Year2 
+last_nir = rasterio.open("Year2_NIR.tif") #Read the NIR band of the Landsat8 Year2
+
+
+""" STEP2: Convert_to_float. 
+    # Red and NIR bands data type is 'uint16'
+    # Convert to float for NDVI calculation
+"""
+
+first_red_toFloat = first_red.read(1).astype('float') #(1) to read the first band of raster
+first_nir_toFloat = first_nir.read(1).astype('float')
+last_red_toFloat = last_red.read(1).astype('float')
+last_nir_toFloat = last_nir.read(1).astype('float')
+
+""" STEP3: Calculate NDVI for both years
+    #  perform NDVI calculation for Year1 and Year2, and difference in NDVIs
+    # using numpy.where(condition, x, y)"""
+
+ndviFirst = np.where((first_red_toFloat+first_nir_toFloat) ==0, 0, ((first_nir_toFloat-first_red_toFloat)/(first_nir_toFloat+first_red_toFloat))) # ---> condition: set value to 0 if denominator is 0
+ndviLast = np.where((last_red_toFloat+last_nir_toFloat) ==0, 0, (last_nir_toFloat-last_red_toFloat)/(last_nir_toFloat+last_red_toFloat))
+ndviDiff = ndviLast - ndviFirst
+
+""" STEP4: Use the NDVI values to create NDVI rasters for Year1 , Year2 and NDVI difference, for which:
+    a. create a .tif file location for the final NDVI with rasterio.open
+    b.  write the newly calculated NDVI values onto the .tif file created in the previous step
+    c. Close the file after writing
+    # using .open (file_name, w for write, driver as Geotiff (raster data format), height and width same as source files, count of dataset bands, crs=coordinate ref system, same as source file crs, transform same as source file"""
+
+ndviFirstImage = rasterio.open("Year1NDVI.TIF",'w', driver='Gtiff', width=first_red.width, height=first_red.height, count=1, crs=first_red.crs, transform=first_red.transform, dtype='float64')
+ndviFirstImage.write(ndviFirst,1)
+
+ndviLastImage = rasterio.open("Year2NDVI.TIF", 'w', driver='Gtiff', width=last_red.width, height=last_red.height, count=1, crs=first_red.crs, transform=last_red.transform, dtype='float64')
+ndviLastImage.write(ndviLast,1)
+
+ndviDiffImage = rasterio.open("DiffNDVI.TIF",'w', driver='Gtiff', width=last_red.width, height=last_red.height, count=1, crs=first_red.crs, transform=last_red.transform, dtype='float64')
+ndviDiffImage.write(ndviDiff,1)
+
+""" STEP 5: Calculate %heavy_green_vegetation in Year1 and Year2
+    # heavy green can be calculated as all the pixels with NDVI> 0.5 (defined as a constant above) 
+    # % of NDVI pixels>0.5 out of all NDVI pixels gives % heavy green vegetation"""
+
+vegetation_count_First = np.count_nonzero(ndviFirst > HIGH_VEGETATION_NDVI_THRESHOLD)
+vegetation_count_Last= np.count_nonzero(ndviLast > HIGH_VEGETATION_NDVI_THRESHOLD )
+
+size_First= ndviFirstImage.width * ndviFirstImage.height
+size_Last= ndviLastImage.width * ndviLastImage.height
+
+Percent_green_First= vegetation_count_First*100/size_First
+Percent_green_Last= vegetation_count_Last*100/size_Last
+Percent_diff= round(Percent_green_Last-Percent_green_First,2)
+
+print(f'High vegetation percentage for Year1: {round(Percent_green_First, 2)} %')
+print(f'High vegetation percentage for Year2: {round(Percent_green_Last, 2)} %')
+print(f'Percent difference: {Percent_diff}%')
+
+
+""" STEP6: display NDVIs
+    # using plt.figure to display all images in one window 
+"""
+image=plt.figure()
+
+image.add_subplot(131)
+fig1 = plt.imshow(ndviFirst, cmap='RdYlGn', vmin=-1, vmax=1)
+plt.title(f'For LocationX in Year1 \n\n Green cover = {round(Percent_green_First,2)}%')
+plt.axis('off')
+
+image.add_subplot(132)
+fig2 = plt.imshow(ndviLast, cmap='RdYlGn', vmin=-1, vmax= 1)
+plt.title(f'For LocationX in Year2 \n\n Green cover =  {round(Percent_green_Last,2)} %')
+plt.axis('off')
+
+image.add_subplot(133)
+fig3= plt.imshow(ndviDiff, cmap='RdYlGn', vmin=-1, vmax=1)
+plt.title(f'For LocationX \n\n Green cover difference = {round(Percent_diff,2)} %')
+plt.axis('off')
+
+mng=plt.get_current_fig_manager()
+mng.window.showMaximized()
+plt.show()
+
+ndviFirstImage.close()
+ndviLastImage.close()
+ndviDiffImage.close()
